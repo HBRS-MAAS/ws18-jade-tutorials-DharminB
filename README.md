@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/HBRS-MAAS/jade-tutorials.svg?branch=master)](https://travis-ci.org/HBRS-MAAS/jade-tutorials)
+[![Build Status](https://travis-ci.org/HBRS-MAAS/ws18-jade-tutorials-DharminB.svg?branch=master)](https://travis-ci.org/HBRS-MAAS/ws18-jade-tutorials-DharminB)
 
 # Jade Tutorials
 
