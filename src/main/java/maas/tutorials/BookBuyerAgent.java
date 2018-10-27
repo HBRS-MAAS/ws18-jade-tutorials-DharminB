@@ -1,14 +1,11 @@
 package maas.tutorials;
 
-import jade.content.lang.Codec;
-import jade.content.lang.sl.SLCodec;
-import jade.content.onto.basic.Action;
 import jade.core.Agent;
 import jade.core.AID;
 import jade.core.behaviours.*;
-import jade.domain.FIPANames;
-import jade.domain.JADEAgentManagement.JADEManagementOntology;
-import jade.domain.JADEAgentManagement.ShutdownPlatform;
+import jade.domain.FIPAAgentManagement.*;
+import jade.domain.FIPAException;
+import jade.domain.DFService;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 
@@ -20,13 +17,23 @@ public class BookBuyerAgent extends Agent {
     // number of books needed to be bought for the buyer agent to die
     private int mandatoryNumberOfBooksNeeded = 3;
     // The list of known seller agents
-    private AID[] sellerAgents = {  new AID("seller1", AID.ISLOCALNAME),
-                                    new AID("seller2", AID.ISLOCALNAME),
-                                    new AID("seller3", AID.ISLOCALNAME)};
+    private AID[] sellerAgents;
+    // private AID[] sellerAgents = {  new AID("seller1", AID.ISLOCALNAME),
+    //                                 new AID("seller2", AID.ISLOCALNAME),
+    //                                 new AID("seller3", AID.ISLOCALNAME)};
     protected void setup() {
 		// Printout a welcome message
-        System.out.println("\tBuyer-agent "+getAID().getName()+" is born.");
+        System.out.println("\tBuyer-agent "+getAID().getLocalName()+" is born.");
 
+        this.publishBuyerAID();
+        // wait for sellers to be born
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        // get the agent id of all the available sellers
+        this.getSellerAID();
         // Get the title of the book to buy as a start-up argument
         Object[] args = getArguments();
         if (args != null && args.length > 0) {
@@ -41,21 +48,52 @@ public class BookBuyerAgent extends Agent {
             System.out.println("\tNo book title specified");
             doDelete();
         }
-        
-        // try {
-        //     Thread.sleep(3000);
-        // } catch (InterruptedException e) {
-        //     //e.printStackTrace();
-        // }
-
         // addBehaviour(new shutdown());
-
     }
 
     protected void takeDown() {
+        // Deregister from the yellow pages
+        try {
+            DFService.deregister(this);
+        }
+        catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
         System.out.println("\t" + getAID().getLocalName() + ": Terminating.");
     }
 
+    protected void publishBuyerAID(){
+        // Register the book-buying service in the yellow pages
+        DFAgentDescription dfd = new DFAgentDescription();
+        dfd.setName(getAID());
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("book-buying");
+        sd.setName("JADE-book-trading");
+        dfd.addServices(sd);
+        try {
+            DFService.register(this, dfd);
+        }
+        catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
+    protected void getSellerAID() {
+        // Update the list of seller agents
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("book-selling");
+        template.addServices(sd);
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            sellerAgents = new AID[result.length];
+            for (int i = 0; i < result.length; ++i) {
+                sellerAgents[i] = result[i].getName();
+            }
+        }
+        catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
 
 	/*
 	Inner class RequestPerformer.
@@ -170,23 +208,4 @@ public class BookBuyerAgent extends Agent {
 	} // End of inner class RequestPerformer
 
 
-    // Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
-    private class shutdown extends OneShotBehaviour{
-        public void action() {
-            ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
-            Codec codec = new SLCodec();
-            myAgent.getContentManager().registerLanguage(codec);
-            myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
-            shutdownMessage.addReceiver(myAgent.getAMS());
-            shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
-            shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
-            try {
-                myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
-                myAgent.send(shutdownMessage);
-            }
-            catch (Exception e) {
-                //LOGGER.error(e);
-            }
-        }
-    }
 }

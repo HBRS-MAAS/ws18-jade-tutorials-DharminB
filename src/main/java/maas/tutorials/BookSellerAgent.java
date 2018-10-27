@@ -1,17 +1,31 @@
 package maas.tutorials;
+
+import jade.content.lang.Codec;
+import jade.content.lang.sl.SLCodec;
+import jade.content.onto.basic.Action;
+import jade.domain.JADEAgentManagement.JADEManagementOntology;
+import jade.domain.JADEAgentManagement.ShutdownPlatform;
+import jade.domain.FIPANames;
+
 import jade.core.Agent;
+import jade.core.AID;
 import jade.core.behaviours.*;
 import java.util.*;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
+import jade.domain.FIPAAgentManagement.*;
+import jade.domain.FIPAException;
+import jade.domain.DFService;
 
 public class BookSellerAgent extends Agent {
     private ArrayList books_list;
 
-	protected void setup() {
-		// Printout a welcome message
-        System.out.println("\tSeller-agent "+getAID().getName()+" is born.");
+    protected void setup() {
+        // Printout a welcome message
+        System.out.println("\tSeller-agent "+getAID().getLocalName()+" is born.");
 
+        this.publishSellerAID();
+        
         // list of books that the seller is offering and their information
         books_list = new ArrayList();
 
@@ -35,17 +49,78 @@ public class BookSellerAgent extends Agent {
             doDelete();
         }
         //System.out.println(books_list.get(0).toString());
-		// Add the behaviour serving requests for offer from buyer agents
-		addBehaviour(new OfferRequestsServer());
-		// Add the behaviour serving purchase orders from buyer agents
-		addBehaviour(new PurchaseOrdersServer());
-	}
+        // Add the behaviour serving requests for offer from buyer agents
+        addBehaviour(new OfferRequestsServer());
+        // Add the behaviour serving purchase orders from buyer agents
+        addBehaviour(new PurchaseOrdersServer());
+        // Add the behaviour that will terminate the seller if no buyers are online
+        addBehaviour(new SellerTerminator());
+    }
 
-	// Put agent clean-up operations here
-	protected void takeDown() {
-		// Printout a dismissal message
-		System.out.println("\t"+getAID().getLocalName()+" terminating.");
-	}
+    // Put agent clean-up operations here
+    protected void takeDown() {
+        // Deregister from the yellow pages
+        try {
+            DFService.deregister(this);
+        }
+        catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+        // Printout a dismissal message
+        System.out.println("\t"+getAID().getLocalName()+" terminating.");
+    }
+    protected void publishSellerAID(){
+        // Register the book-selling service in the yellow pages
+        DFAgentDescription dfd = new DFAgentDescription();
+        dfd.setName(getAID());
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("book-selling");
+        sd.setName("JADE-book-trading");
+        dfd.addServices(sd);
+        try {
+            DFService.register(this, dfd);
+        }
+        catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
+    
+
+    /*
+     * Inner class SellerTerminator
+     * This behaviour is used by Book-seller agents to check if there are any 
+     * buyer agents alive. If there are none, then the seller agent will terminate
+     * itself. The checking is done in action method and the suicide is commited in
+     * done method.
+     * */
+    private class SellerTerminator extends Behaviour {
+        private int numberOfBuyersAlive;
+        public void action() {
+            // Update the list of buyer agents
+            DFAgentDescription template = new DFAgentDescription();
+            ServiceDescription sd = new ServiceDescription();
+            sd.setType("book-buying");
+            template.addServices(sd);
+            try {
+                DFAgentDescription[] result = DFService.search(myAgent, template);
+                // System.out.println(result.length + " buyers online.");
+                this.numberOfBuyersAlive = (int) result.length;
+            }
+            catch (FIPAException fe) {
+                fe.printStackTrace();
+            }
+        }
+        public boolean done () {
+            if (this.numberOfBuyersAlive == 0) {
+                // myAgent.doDelete();
+                myAgent.addBehaviour(new shutdown());
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+    }
 
     /*
      * Inner class OfferRequestsServer.
@@ -167,6 +242,26 @@ public class BookSellerAgent extends Agent {
                 }
             }
             // System.out.println(books_list.toString());
+        }
+    }
+    
+    // Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
+    private class shutdown extends OneShotBehaviour{
+        public void action() {
+            ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
+            Codec codec = new SLCodec();
+            myAgent.getContentManager().registerLanguage(codec);
+            myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
+            shutdownMessage.addReceiver(myAgent.getAMS());
+            shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
+            shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
+            try {
+                myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
+                myAgent.send(shutdownMessage);
+            }
+            catch (Exception e) {
+                //LOGGER.error(e);
+            }
         }
     }
 }
